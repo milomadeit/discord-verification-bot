@@ -1,59 +1,54 @@
-const express = require('express');
-const { Client, GatewayIntentBits, Partials } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, Events } = require('discord.js');
 const config = require('./config.json');
 const token = config.BOT_ID;
-const app = express();
+const guildId = config.GUILD_ID;
 
-app.use(express.json());
-
+const rest = new REST({ version: '10' }).setToken(token);
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
         GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.MessageContent
     ],
-    partials: [Partials.Channel]
 });
 
-client.once('ready', () => {
+
+client.once(Events.ClientReady, async () => {
     console.log('Bot is online!');
+    
+    // Register slash commands once the bot is ready
+    try {
+        console.log('Started refreshing application (/) commands.');
+
+        await rest.put(Routes.applicationGuildCommands(client.user.id, guildId), {
+            body: [
+                {
+                    name: 'verify',
+                    description: 'Start the wallet verification process',
+                },
+            ],
+        });
+
+        console.log('Successfully reloaded application (/) commands.');
+    } catch (error) {
+        console.error(error);
+    }
+});
+
+client.on(Events.InteractionCreate, async interaction => {
+    if (!interaction.isCommand()) return;
+
+    const { commandName } = interaction;
+
+    if (commandName === 'verify') {
+        const user = interaction.user;
+        try {
+            await user.send('Click the link to verify your wallet: http://localhost:3000/verify?userId=' + user.id);
+            await interaction.reply('Verification link has been sent to your DMs.');
+        } catch (error) {
+            console.error('Could not send DM to the user.');
+            await interaction.reply('Could not send you a DM. Please make sure you have DMs enabled.');
+        }
+    }
 });
 
 client.login(token);
-
-app.post('/update-roles', async (req, res) => {
-    const { discordId, totalNFTs } = req.body;
-
-    const guild = client.guilds.cache.get('YOUR_GUILD_ID');
-    const member = guild.members.cache.get(discordId);
-
-    const roles = {
-        '1-9': 'ROLE_ID_1',
-        '10-24': 'ROLE_ID_2',
-        '25-49': 'ROLE_ID_3',
-        '50-99': 'ROLE_ID_4',
-        '100+': 'ROLE_ID_5'
-    };
-
-    let roleId;
-    if (totalNFTs >= 100) {
-        roleId = roles['100+'];
-    } else if (totalNFTs >= 50) {
-        roleId = roles['50-99'];
-    } else if (totalNFTs >= 25) {
-        roleId = roles['25-49'];
-    } else if (totalNFTs >= 10) {
-        roleId = roles['10-24'];
-    } else if (totalNFTs >= 1) {
-        roleId = roles['1-9'];
-    }
-
-    if (roleId) {
-        await member.roles.add(roleId);
-    }
-
-    res.status(200).json({ success: true });
-});
-
-app.listen(3001, ()
